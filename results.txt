@@ -1,0 +1,73 @@
+============================================================
+DBSCAN vs AMD-DBSCAN Comparison
+============================================================
+
+============================================================
+Testing on Multi-Density Dataset
+============================================================
+Dataset shape: (800, 2)
+True number of clusters: 3
+
+--- DBSCAN ---
+Best DBSCAN parameters: eps=1.0, min_pts=5
+  NMI: 0.9863
+  ARI: 0.9931
+  Number of clusters: 3
+  Noise ratio: 1.88%   
+
+--- AMD-DBSCAN ---     
+  Execution time: 1.88s
+  NMI: 0.5884
+  ARI: 0.6277
+  Number of clusters: 57
+  Noise ratio: 0.12%
+  VNN (Variance of Neighbors): 417.92
+  Adaptive k: 74
+  Candidate Eps: ['0.178', '0.268', '0.393', '0.791', '0.950', '1.139', '1.341', '1.555', '1.764', '1.964', '2.153', '2.436', '2.748', '3.057', '3.356', '3.606', '3.952', '4.514', '5.270']
+
+--- Comparison ---
+NMI improvement: -0.3979 (-40.3%)
+
+Saved plot: comparison_multi_density.png
+
+============================================================
+Testing on Single-Density Dataset
+============================================================
+Dataset shape: (600, 2)
+True number of clusters: 3
+
+--- DBSCAN ---
+Best DBSCAN parameters: eps=0.5, min_pts=5
+  NMI: 1.0000
+  ARI: 1.0000
+  Number of clusters: 3
+  Noise ratio: 1.50%   
+
+--- AMD-DBSCAN ---
+  Execution time: 0.46s
+  NMI: 0.7869
+  ARI: 0.7984
+  Number of clusters: 17
+  Noise ratio: 1.00%
+  VNN (Variance of Neighbors): 1.93
+  Adaptive k: 59
+  Candidate Eps: ['0.492', '0.523', '0.558', '0.587', '0.610', '0.641', '0.683', '0.726', '0.771', '0.811', '0.859', '0.917', '0.966', '1.015', '1.065', '1.145', '1.233', '1.338', '1.425', '1.557', '1.836', '2.081']
+
+--- Comparison ---
+NMI improvement: -0.2131 (-21.3%)
+
+Saved plot: comparison_single_density.png
+
+============================================================
+SUMMARY
+============================================================
+
+Multi-Density Dataset:
+  DBSCAN NMI: 0.9863
+  AMD-DBSCAN NMI: 0.5884
+  Improvement: -40.3%
+
+Single-Density Dataset:
+  DBSCAN NMI: 1.0000
+  AMD-DBSCAN NMI: 0.7869
+  Improvement: -21.3%
