@@ -83,7 +83,6 @@ def generate_multi_density_data3():
 
 def evaluate_clustering(y_true, y_pred, labels_true_name="True", labels_pred_name="Predicted"):
     """Oblicza metryki ewaluacyjne"""
-    # Usuwanie punktów szumu (-1) dla niektórych metryk
     mask = y_pred != -1
     if np.sum(mask) == 0:
         return {"nmi": 0.0, "ari": 0.0, "noise_ratio": 1.0, "n_clusters": 0}
@@ -146,14 +145,11 @@ def compare_on_dataset(X, y_true, dataset_name="Dataset"):
     print(f"Dataset shape: {X.shape}")
     print(f"True number of clusters: {len(set(y_true))}")
     
-    # Test DBSCAN z ręcznie dostrojonymi parametrami
-    # Dla sprawiedliwego porównania, wypróbowanie kilku kombinacji parametrów
     print("\n--- DBSCAN ---")
     best_dbscan_nmi = -1
     best_dbscan_labels = None
     best_dbscan_params = None
-    
-    # Wypróbowanie różnych wartości eps
+
     eps_candidates = [0.3, 0.5, 0.7, 1.0, 1.5, 2.0]
     min_pts = 5
     
@@ -172,11 +168,9 @@ def compare_on_dataset(X, y_true, dataset_name="Dataset"):
     print(f"  ARI: {dbscan_eval['ari']:.4f}")
     print(f"  Number of clusters: {dbscan_eval['n_clusters']}")
     print(f"  Noise ratio: {dbscan_eval['noise_ratio']:.2%}")
-    
-    # Test AMD-DBSCAN
+
     print("\n--- AMD-DBSCAN ---")
     start_time = time.time()
-    # Nie ustawiaj eps_peaks - pozwól algorytmowi automatycznie wykryć na podstawie VNN
     model_amd = AMD_DBSCAN(verbose=False, max_k_search=50)
     amd_labels, amd_eval_dict = model_amd.fit_predict(X, y_true=y_true)
     amd_time = time.time() - start_time
@@ -190,8 +184,7 @@ def compare_on_dataset(X, y_true, dataset_name="Dataset"):
     print(f"  VNN (Variance of Neighbors): {model_amd.vnn_:.2f}")
     print(f"  Adaptive k: {model_amd.adaptive_k_}")
     print(f"  Candidate Eps: {[f'{e:.3f}' for e in model_amd.candidate_eps_]}")
-    
-    # Porównanie
+
     print("\n--- Comparison ---")
     nmi_improvement = amd_eval['nmi'] - dbscan_eval['nmi']
     print(f"NMI improvement: {nmi_improvement:+.4f} ({nmi_improvement/dbscan_eval['nmi']*100:+.1f}%)")
