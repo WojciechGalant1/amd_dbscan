@@ -91,7 +91,7 @@ class AMD_DBSCAN:
         eps_list = []
         for k in range(1, max_k + 1):
             # średnia k-odległości między punktami jako kandydat eps
-            val = np.percentile(dists[:, k], 90)  # użycie 90-tego percentyla aby uniknąć wpływu odległych punktów
+            val = np.mean(dists[:, k])
             eps_list.append(float(val))
         # upewnienie się, że rosnąco (powinno być naturalnie niemalejące)
         eps_list = sorted(list(set(eps_list)))
@@ -124,10 +124,7 @@ class AMD_DBSCAN:
             # Pt_i z artykułu to liczba sąsiadów w promieniu Eps; niejasne czy włącza samego siebie; włączymy wszystkich sąsiadów (włącznie z samym sobą) potem uśrednimy
             counts = np.array([len(lst) for lst in neigh], dtype=float)
             mean_count = np.mean(counts)
-            minpts = int(round(mean_count)) # zaokrąglenie do najbliższej liczby całkowitej
-            # ograniczenie minpts do rozsądnego zakresu
-            minpts = max(self.min_pts_floor, min(minpts, 10)) # ograniczenie górne do 10 aby uniknąć zbyt dużych wartości
-
+            minpts = int(round(mean_count))
             if minpts < self.min_pts_floor:
                 minpts = self.min_pts_floor
             minpts_list.append(int(minpts))
@@ -341,17 +338,15 @@ class AMD_DBSCAN:
     # --------------------------
     def multi_density_clustering(self, X, candidate_eps=None, metric=None):
         """
-        Multi-density DBSCAN (Alg. 3)
-        Dla każdej wartości eps z candidate_eps:
-            - oblicza MinPts (z ograniczeniem do rozsądnego zakresu)
-            - odpala DBSCAN na pozostałych punktach
-            - usuwa zbyt małe klastry (szum)
-            - przypisuje unikalne globalne ID klastrów
-            - usuwa sklasteryzowane punkty i przechodzi dalej
+        Dla posortowanych candidate_eps (rosnąco), dla każdego eps:
+            - oblicz MinPts dla tego eps (na podstawie średniej liczby sąsiadów)
+            - uruchom DBSCAN(eps, minpts) na aktualnych pozostałych punktach
+            - przypisz etykiety klastrów (unikalne między warstwami)
+            - usuń sklasteryzowane punkty i kontynuuj
+        Zwraca końcowe etykiety (np.array długości n), szum=-1
         """
         X = np.asarray(X)
         n = X.shape[0]
-
         if candidate_eps is None:
             candidate_eps = self.candidate_eps_
             if candidate_eps is None:
@@ -364,54 +359,26 @@ class AMD_DBSCAN:
         final_labels = -np.ones(n, dtype=int)
         next_cluster_id = 0
 
-        # minimalny rozmiar klastra zależny od adaptive_k_
-        min_cluster_size = max(5, self.adaptive_k_ // 2)
-
         for eps in sorted(candidate_eps):
             if len(remaining_idx) == 0:
                 break
-
-            # ---------------------------------------------------------
-            # 1) Obliczenie MinPts (średnia liczby sąsiadów dla danego eps)
-            #    + ograniczenie do sensownego zakresu
-            # ---------------------------------------------------------
+            # obliczenie minpts dla eps
+            # wykonanie zapytań o promień
             nbrs_rad = NearestNeighbors(radius=eps, metric=metric).fit(X[remaining_idx])
             neigh = nbrs_rad.radius_neighbors(X[remaining_idx], return_distance=False)
             counts = np.array([len(a) for a in neigh], dtype=float)
-
             minpts = int(round(np.mean(counts)))
-            minpts = max(self.min_pts_floor, min(minpts, 10))   # <--- OGRANICZENIE DO 3–10
+            if minpts < self.min_pts_floor:
+                minpts = self.min_pts_floor
 
-            # ---------------------------------------------------------
-            # 2) Uruchom DBSCAN dla tego eps
-            # ---------------------------------------------------------
+            # uruchomienie DBSCAN na pozostałych punktach z eps i minpts
             labels_partial, nclusters = self.run_dbscan(X[remaining_idx], eps, minpts, metric=metric)
-
             if nclusters <= 0:
+                # nic nie zostało sklasteryzowane przy tym eps, pominiecie
                 continue
 
-            # ---------------------------------------------------------
-            # 3) USUWANIE MAŁYCH KLASTRÓW (KLUCZOWE USPRAWNIENIE)
-            # ---------------------------------------------------------
-            labels_fixed = labels_partial.copy()
-            unique_partial = set(labels_partial)
-
-            for c in unique_partial:
-                if c == -1:
-                    continue
-                if np.sum(labels_partial == c) < min_cluster_size:
-                    labels_fixed[labels_partial == c] = -1
-
-            labels_partial = labels_fixed
+            # mapowanie częściowych etykiet na globalne id klastrów
             unique_partial = sorted([u for u in set(labels_partial) if u != -1])
-
-            if len(unique_partial) == 0:
-                # po odfiltrowaniu nic nie zostało sklasteryzowane
-                continue
-
-            # ---------------------------------------------------------
-            # 4) Mapowanie klastrów lokalnych na globalne ID
-            # ---------------------------------------------------------
             mapping = {}
             for up in unique_partial:
                 next_cluster_id += 1
@@ -422,20 +389,16 @@ class AMD_DBSCAN:
                     global_idx = remaining_idx[local_idx]
                     final_labels[global_idx] = mapping[lab]
 
-            # ---------------------------------------------------------
-            # 5) Usuwanie sklasteryzowanych punktów
-            # ---------------------------------------------------------
+            # usuwanie sklasteryzowanych punktów z remaining_idx
             remaining_mask = np.array([final_labels[i] == -1 for i in remaining_idx])
             remaining_idx = remaining_idx[remaining_mask]
 
             if self.verbose:
-                print(f"[multi_density] eps={eps:.4f} minpts={minpts}, "
-                    f"new_clusters={len(unique_partial)}, remaining={len(remaining_idx)}")
+                print(f"[multi_density] eps={eps:.4f} minpts={minpts}, new_clusters={len(unique_partial)}, remaining={len(remaining_idx)}")
 
-        # Pozostałe punkty zostają jako szum (-1)
+        # pozostałe punkty pozostają jako szum (-1)
         self.labels_ = final_labels
         return final_labels
-
 
     # --------------------------
     # Metoda wysokiego poziomu fit_predict
