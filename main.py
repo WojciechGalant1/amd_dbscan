@@ -39,9 +39,50 @@ def generate_single_density_data():
     return X, y_true
 
 
+def generate_multi_density_data2():
+    """Generuje drugi zbiór danych o wielokrotnej gęstości - bardziej ekstremalne różnice"""
+    # Bardzo gęsty klaster
+    X1, y1 = make_blobs(n_samples=250, centers=[(0, 0)], cluster_std=0.15, random_state=50)
+    y1 = y1 * 0  # etykieta 0
+    
+    # Klaster o średniej gęstości
+    X2, y2 = make_blobs(n_samples=250, centers=[(6, 0)], cluster_std=1.2, random_state=51)
+    y2 = y2 * 0 + 1  # etykieta 1
+    
+    # Bardzo rzadki klaster
+    X3, y3 = make_blobs(n_samples=150, centers=[(3, 4)], cluster_std=2.0, random_state=52)
+    y3 = y3 * 0 + 2  # etykieta 2
+    
+    X = np.vstack([X1, X2, X3])
+    y_true = np.hstack([y1, y2, y3])
+    return X, y_true
+
+
+def generate_multi_density_data3():
+    """Generuje trzeci zbiór danych o wielokrotnej gęstości - 4 klastry"""
+    # Gęsty klaster 1
+    X1, y1 = make_blobs(n_samples=200, centers=[(0, 0)], cluster_std=0.25, random_state=60)
+    y1 = y1 * 0  # etykieta 0
+    
+    # Gęsty klaster 2
+    X2, y2 = make_blobs(n_samples=200, centers=[(4, 0)], cluster_std=0.3, random_state=61)
+    y2 = y2 * 0 + 1  # etykieta 1
+    
+    # Klaster o średniej gęstości
+    X3, y3 = make_blobs(n_samples=200, centers=[(2, 3)], cluster_std=1.0, random_state=62)
+    y3 = y3 * 0 + 2  # etykieta 2
+    
+    # Rzadki klaster
+    X4, y4 = make_blobs(n_samples=150, centers=[(6, 3)], cluster_std=1.5, random_state=63)
+    y4 = y4 * 0 + 3  # etykieta 3
+    
+    X = np.vstack([X1, X2, X3, X4])
+    y_true = np.hstack([y1, y2, y3, y4])
+    return X, y_true
+
+
 def evaluate_clustering(y_true, y_pred, labels_true_name="True", labels_pred_name="Predicted"):
     """Oblicza metryki ewaluacyjne"""
-    # Usuwanie punktów szumu (-1) dla niektórych metryk
     mask = y_pred != -1
     if np.sum(mask) == 0:
         return {"nmi": 0.0, "ari": 0.0, "noise_ratio": 1.0, "n_clusters": 0}
@@ -104,14 +145,11 @@ def compare_on_dataset(X, y_true, dataset_name="Dataset"):
     print(f"Dataset shape: {X.shape}")
     print(f"True number of clusters: {len(set(y_true))}")
     
-    # Test DBSCAN z ręcznie dostrojonymi parametrami
-    # Dla sprawiedliwego porównania, wypróbowanie kilku kombinacji parametrów
     print("\n--- DBSCAN ---")
     best_dbscan_nmi = -1
     best_dbscan_labels = None
     best_dbscan_params = None
-    
-    # Wypróbowanie różnych wartości eps
+
     eps_candidates = [0.3, 0.5, 0.7, 1.0, 1.5, 2.0]
     min_pts = 5
     
@@ -130,8 +168,7 @@ def compare_on_dataset(X, y_true, dataset_name="Dataset"):
     print(f"  ARI: {dbscan_eval['ari']:.4f}")
     print(f"  Number of clusters: {dbscan_eval['n_clusters']}")
     print(f"  Noise ratio: {dbscan_eval['noise_ratio']:.2%}")
-    
-    # Test AMD-DBSCAN
+
     print("\n--- AMD-DBSCAN ---")
     start_time = time.time()
     model_amd = AMD_DBSCAN(verbose=False, max_k_search=50)
@@ -147,8 +184,7 @@ def compare_on_dataset(X, y_true, dataset_name="Dataset"):
     print(f"  VNN (Variance of Neighbors): {model_amd.vnn_:.2f}")
     print(f"  Adaptive k: {model_amd.adaptive_k_}")
     print(f"  Candidate Eps: {[f'{e:.3f}' for e in model_amd.candidate_eps_]}")
-    
-    # Porównanie
+
     print("\n--- Comparison ---")
     nmi_improvement = amd_eval['nmi'] - dbscan_eval['nmi']
     print(f"NMI improvement: {nmi_improvement:+.4f} ({nmi_improvement/dbscan_eval['nmi']*100:+.1f}%)")
@@ -162,41 +198,66 @@ def main():
     print("DBSCAN vs AMD-DBSCAN Comparison")
     print("="*60)
     
-    # Test 1: Zbiór danych o wielokrotnej gęstości
+    results = []
+    
+    # Test 1: Zbiór danych o wielokrotnej gęstości (oryginalny)
     X_multi, y_multi = generate_multi_density_data()
     dbscan_labels_multi, amd_labels_multi, dbscan_eval_multi, amd_eval_multi = \
         compare_on_dataset(X_multi, y_multi, "Multi-Density Dataset")
+    results.append(("Multi-Density Dataset", dbscan_eval_multi, amd_eval_multi))
     
     fig1 = plot_comparison(X_multi, y_multi, dbscan_labels_multi, amd_labels_multi, 
                           "Multi-Density: ")
     plt.savefig("comparison_multi_density.png", dpi=150, bbox_inches='tight')
     print("\nSaved plot: comparison_multi_density.png")
+    plt.close(fig1)
     
-    # Test 2: Zbiór danych o pojedynczej gęstości
+    # Test 2: Zbiór danych o wielokrotnej gęstości 2 (bardziej ekstremalne różnice)
+    X_multi2, y_multi2 = generate_multi_density_data2()
+    dbscan_labels_multi2, amd_labels_multi2, dbscan_eval_multi2, amd_eval_multi2 = \
+        compare_on_dataset(X_multi2, y_multi2, "Multi-Density Dataset 2")
+    results.append(("Multi-Density Dataset 2", dbscan_eval_multi2, amd_eval_multi2))
+    
+    fig2 = plot_comparison(X_multi2, y_multi2, dbscan_labels_multi2, amd_labels_multi2, 
+                          "Multi-Density 2: ")
+    plt.savefig("comparison_multi_density2.png", dpi=150, bbox_inches='tight')
+    print("\nSaved plot: comparison_multi_density2.png")
+    plt.close(fig2)
+    
+    # Test 3: Zbiór danych o wielokrotnej gęstości 3 (4 klastry)
+    X_multi3, y_multi3 = generate_multi_density_data3()
+    dbscan_labels_multi3, amd_labels_multi3, dbscan_eval_multi3, amd_eval_multi3 = \
+        compare_on_dataset(X_multi3, y_multi3, "Multi-Density Dataset 3 (4 clusters)")
+    results.append(("Multi-Density Dataset 3", dbscan_eval_multi3, amd_eval_multi3))
+    
+    fig3 = plot_comparison(X_multi3, y_multi3, dbscan_labels_multi3, amd_labels_multi3, 
+                          "Multi-Density 3: ")
+    plt.savefig("comparison_multi_density3.png", dpi=150, bbox_inches='tight')
+    print("\nSaved plot: comparison_multi_density3.png")
+    plt.close(fig3)
+    
+    # Test 4: Zbiór danych o pojedynczej gęstości
     X_single, y_single = generate_single_density_data()
     dbscan_labels_single, amd_labels_single, dbscan_eval_single, amd_eval_single = \
         compare_on_dataset(X_single, y_single, "Single-Density Dataset")
+    results.append(("Single-Density Dataset", dbscan_eval_single, amd_eval_single))
     
-    fig2 = plot_comparison(X_single, y_single, dbscan_labels_single, amd_labels_single,
+    fig4 = plot_comparison(X_single, y_single, dbscan_labels_single, amd_labels_single,
                           "Single-Density: ")
     plt.savefig("comparison_single_density.png", dpi=150, bbox_inches='tight')
     print("\nSaved plot: comparison_single_density.png")
+    plt.close(fig4)
     
     # Podsumowanie
     print("\n" + "="*60)
     print("SUMMARY")
     print("="*60)
-    print("\nMulti-Density Dataset:")
-    print(f"  DBSCAN NMI: {dbscan_eval_multi['nmi']:.4f}")
-    print(f"  AMD-DBSCAN NMI: {amd_eval_multi['nmi']:.4f}")
-    print(f"  Improvement: {(amd_eval_multi['nmi'] - dbscan_eval_multi['nmi'])/dbscan_eval_multi['nmi']*100:+.1f}%")
-    
-    print("\nSingle-Density Dataset:")
-    print(f"  DBSCAN NMI: {dbscan_eval_single['nmi']:.4f}")
-    print(f"  AMD-DBSCAN NMI: {amd_eval_single['nmi']:.4f}")
-    print(f"  Improvement: {(amd_eval_single['nmi'] - dbscan_eval_single['nmi'])/dbscan_eval_single['nmi']*100:+.1f}%")
-    
-    plt.show()
+    for name, dbscan_eval, amd_eval in results:
+        improvement = (amd_eval['nmi'] - dbscan_eval['nmi'])/dbscan_eval['nmi']*100 if dbscan_eval['nmi'] > 0 else 0
+        print(f"\n{name}:")
+        print(f"  DBSCAN NMI: {dbscan_eval['nmi']:.4f}")
+        print(f"  AMD-DBSCAN NMI: {amd_eval['nmi']:.4f}")
+        print(f"  Improvement: {improvement:+.1f}%")
 
 
 if __name__ == "__main__":

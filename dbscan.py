@@ -28,7 +28,7 @@ class DBSCAN:
         X = np.asarray(X)
         n = len(X)
 
-        labels = [-1] * n   # -1 oznacza szum/nieprzypisane
+        labels = [-1] * n
         cluster_id = 0
         visited = set()
 
@@ -39,16 +39,13 @@ class DBSCAN:
             visited.add(i)
             neighbors = self._region_query(X, i)
 
-            # Jeśli punkt ma za mało sąsiadów, to szum
             if len(neighbors) < self.min_pts:
                 labels[i] = -1
                 continue
 
-            # nowy klaster
             cluster_id += 1
             labels[i] = cluster_id
 
-            # rozszerzanie klastera BFS-em
             queue = deque(neighbors)
 
             while queue:
@@ -58,11 +55,9 @@ class DBSCAN:
                     visited.add(idx)
                     new_neighbors = self._region_query(X, idx)
 
-                    # Jeśli punkt ma dużo sąsiadów -> punkt rdzeniowy, rozszerzanie
                     if len(new_neighbors) >= self.min_pts:
                         queue.extend(new_neighbors)
 
-                # Jeśli punkt nie jest jeszcze przypisany, przypissnie do klastra
                 if labels[idx] == -1:
                     labels[idx] = cluster_id
 

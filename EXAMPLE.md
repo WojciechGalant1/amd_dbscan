@@ -1,152 +1,130 @@
-# Example Analysis: Clustering Multi-Density Dataset
+# DBSCAN vs AMD-DBSCAN Example
 
-This document demonstrates a concrete example of applying both DBSCAN and AMD-DBSCAN to a multi-density dataset and comparing their performance.
+Ten plik przedstawia przykładowe wyniki porównania algorytmów **DBSCAN** i **AMD-DBSCAN** na różnych zbiorach danych o pojedynczej i wielokrotnej gęstości.
 
-## Dataset Description
+---
 
-We generate a synthetic multi-density dataset with three clusters of varying densities:
+## Multi-Density Dataset
 
-1. **Dense Cluster**: 300 points centered at (0, 0) with standard deviation 0.2
-2. **Medium Density Cluster**: 300 points centered at (5, 5) with standard deviation 1.0
-3. **Sparse Cluster**: 200 points centered at (8, -2) with standard deviation 1.8
+- **Kształt zbioru danych:** (800, 2)  
+- **Liczba prawdziwych klastrów:** 3  
 
-**Total**: 800 data points in 2D space
+### DBSCAN
+- Najlepsze parametry: eps=1.0, min_pts=5  
+- NMI: 0.9863  
+- ARI: 0.9931  
+- Liczba klastrów: 3  
+- Noise ratio: 1.88%  
 
-This dataset represents a challenging scenario where traditional DBSCAN struggles because:
-- The dense cluster requires small Eps and high MinPts
-- The sparse cluster requires large Eps and low MinPts
-- A single parameter pair cannot handle both simultaneously
+### AMD-DBSCAN
+- Czas wykonania: 1.84s  
+- NMI: 0.8312  
+- ARI: 0.8140  
+- Liczba klastrów: 7  
+- Noise ratio: 1.12%  
+- VNN (Variance of Neighbors): 417.92  
+- Adaptive k: 20  
+- Candidate Eps: ['0.245', '0.977', '2.003']  
 
-## Experimental Setup
+**Porównanie:**  
+- NMI improvement: -0.1551 (-15.7%)  
 
-### Code Used
+![Multi-Density Dataset](comparison_multi_density.png)
 
-```python
-from dbscan import DBSCAN
-from amd_dbscan import AMD_DBSCAN
-from sklearn.datasets import make_blobs
-import numpy as np
-from sklearn.metrics import normalized_mutual_info_score
+---
 
-# Generate multi-density dataset
-X1, y1 = make_blobs(n_samples=300, centers=[(0, 0)], 
-                    cluster_std=0.2, random_state=42)
-X2, y2 = make_blobs(n_samples=300, centers=[(5, 5)], 
-                    cluster_std=1.0, random_state=43)
-X3, y3 = make_blobs(n_samples=200, centers=[(8, -2)], 
-                    cluster_std=1.8, random_state=44)
+## Multi-Density Dataset 2
 
-X = np.vstack([X1, X2, X3])
-y_true = np.hstack([y1*0, y2*0+1, y3*0+2])
-```
+- **Kształt zbioru danych:** (650, 2)  
+- **Liczba prawdziwych klastrów:** 3  
 
-## Results
+### DBSCAN
+- Najlepsze parametry: eps=0.5, min_pts=5  
+- NMI: 0.7905  
+- ARI: 0.8441  
+- Liczba klastrów: 6  
+- Noise ratio: 12.31%  
 
-### DBSCAN Results
+### AMD-DBSCAN
+- Czas wykonania: 0.45s  
+- NMI: 0.7371  
+- ARI: 0.7589  
+- Liczba klastrów: 5  
+- Noise ratio: 2.15%  
+- VNN (Variance of Neighbors): 899.73  
+- Adaptive k: 20  
+- Candidate Eps: ['0.106', '0.750', '1.626']  
 
-We tested DBSCAN with multiple parameter combinations to find the best result:
+**Porównanie:**  
+- NMI improvement: -0.0535 (-6.8%)  
 
-| Eps | MinPts | NMI | Clusters | Noise Ratio |
-|-----|--------|-----|----------|-------------|
-| 0.3 | 5 | 0.452 | 4 | 12.5% |
-| 0.5 | 5 | 0.623 | 3 | 8.2% |
-| 0.7 | 5 | 0.687 | 3 | 5.1% |
-| 1.0 | 5 | 0.712 | 2 | 3.8% |
-| 1.5 | 5 | 0.654 | 2 | 2.1% |
-| 2.0 | 5 | 0.521 | 1 | 1.2% |
+![Multi-Density Dataset 2](comparison_multi_density2.png)
 
-**Best DBSCAN Result:**
-- Parameters: Eps=1.0, MinPts=5
-- NMI: 0.712
-- Number of clusters detected: 2
-- Noise ratio: 3.8%
+---
 
-**Analysis**: 
-- With Eps=1.0, DBSCAN correctly identifies the dense and medium clusters but merges the sparse cluster with noise or another cluster
-- The sparse cluster is too spread out for this Eps value
-- If we increase Eps to capture the sparse cluster, the dense clusters merge incorrectly
+## Multi-Density Dataset 3 (4 clusters)
 
-### AMD-DBSCAN Results
+- **Kształt zbioru danych:** (750, 2)  
+- **Liczba prawdziwych klastrów:** 4  
 
-AMD-DBSCAN automatically adapts parameters:
+### DBSCAN
+- Najlepsze parametry: eps=0.5, min_pts=5  
+- NMI: 0.8628  
+- ARI: 0.8181  
+- Liczba klastrów: 4  
+- Noise ratio: 7.87%  
 
-**Automatically Determined Parameters:**
-- Adaptive k (MinPts): 8
-- Candidate Eps values: [0.234, 0.891, 1.647]
-- VNN (Variance of Neighbors): 124.3 (indicating extreme multi-density)
+### AMD-DBSCAN
+- Czas wykonania: 0.48s  
+- NMI: 0.8032  
+- ARI: 0.7250  
+- Liczba klastrów: 5  
+- Noise ratio: 0.93%  
+- VNN (Variance of Neighbors): 23.79  
+- Adaptive k: 20  
+- Candidate Eps: ['0.226', '0.785', '1.715']  
 
-**Clustering Results:**
-- NMI: 0.987
-- Number of clusters detected: 3
-- Noise ratio: 1.2%
-- Execution time: ~2.3 seconds
+**Porównanie:**  
+- NMI improvement: -0.0596 (-6.9%)  
 
-**Analysis**:
-- AMD-DBSCAN successfully identifies all three clusters
-- The algorithm uses three different Eps values (one for each density level)
-- Each density level gets its own optimized MinPts value
-- Very low noise ratio indicates accurate clustering
+![Multi-Density Dataset 3](comparison_multi_density3.png)
 
-## Visual Comparison
+---
 
-The generated plots show:
+## Single-Density Dataset
 
-1. **True Labels**: Three distinct clusters with different densities
-2. **DBSCAN**: Two clusters (dense and medium merged, sparse partially captured)
-3. **AMD-DBSCAN**: Three clusters correctly identified
+- **Kształt zbioru danych:** (600, 2)  
+- **Liczba prawdziwych klastrów:** 3  
 
-## Performance Metrics
+### DBSCAN
+- Najlepsze parametry: eps=0.5, min_pts=5  
+- NMI: 1.0000  
+- ARI: 1.0000  
+- Liczba klastrów: 3  
+- Noise ratio: 1.50%  
 
-| Metric | DBSCAN | AMD-DBSCAN | Improvement |
-|--------|--------|------------|-------------|
-| NMI | 0.712 | 0.987 | +38.6% |
-| ARI | 0.689 | 0.974 | +41.4% |
-| Correct Clusters | 2/3 | 3/3 | +50% |
-| Noise Ratio | 3.8% | 1.2% | -68% |
+### AMD-DBSCAN
+- Czas wykonania: 0.37s  
+- NMI: 1.0000  
+- ARI: 1.0000  
+- Liczba klastrów: 3  
+- Noise ratio: 24.17%  
+- VNN (Variance of Neighbors): 1.93  
+- Adaptive k: 20  
+- Candidate Eps: ['0.378']  
 
-## Key Observations
+**Porównanie:**  
+- NMI improvement: -0.0000 (-0.0%)  
 
-1. **Parameter Adaptation**: AMD-DBSCAN automatically found three Eps values (0.234, 0.891, 1.647) corresponding to the three density levels, while DBSCAN struggled with a single Eps value.
+![Single-Density Dataset](comparison_single_density.png)
 
-2. **Multi-Density Handling**: 
-   - DBSCAN: Best result merges two clusters or misclassifies sparse points as noise
-   - AMD-DBSCAN: Correctly separates all three density levels
+---
 
-3. **Noise Detection**: AMD-DBSCAN has a lower noise ratio (1.2% vs 3.8%), indicating it correctly classifies more points as belonging to clusters.
+## Podsumowanie wyników
 
-4. **Automatic vs Manual**: 
-   - DBSCAN required testing 6 different parameter combinations
-   - AMD-DBSCAN required no parameter tuning
-
-## Interpretation
-
-This example clearly demonstrates AMD-DBSCAN's advantage on multi-density datasets:
-
-- **The Problem**: Traditional DBSCAN cannot use a single parameter pair to handle clusters with vastly different densities
-- **AMD-DBSCAN Solution**: Automatically discovers multiple density levels and applies appropriate parameters to each
-- **Result**: 38.6% improvement in clustering quality (NMI) with zero manual parameter tuning
-
-## Code to Reproduce
-
-Run the main comparison script:
-
-```bash
-python main.py
-```
-
-Or use the individual algorithms:
-
-```python
-# DBSCAN (manual tuning required)
-model_dbscan = DBSCAN(eps=1.0, min_pts=5)
-labels_dbscan = model_dbscan.fit_predict(X)
-
-# AMD-DBSCAN (automatic)
-model_amd = AMD_DBSCAN(verbose=True)
-labels_amd, eval_dict = model_amd.fit_predict(X, y_true=y_true)
-```
-
-## Conclusion
-
-This example demonstrates that AMD-DBSCAN significantly outperforms traditional DBSCAN on multi-density datasets by automatically adapting to varying density levels, eliminating the need for manual parameter tuning while achieving superior clustering results.
-
+| Dataset                     | DBSCAN NMI | AMD-DBSCAN NMI | Improvement |
+|------------------------------|------------|----------------|-------------|
+| Multi-Density Dataset        | 0.9863     | 0.8312         | -15.7%      |
+| Multi-Density Dataset 2      | 0.7905     | 0.7371         | -6.8%       |
+| Multi-Density Dataset 3      | 0.8628     | 0.8032         | -6.9%       |
+| Single-Density Dataset       | 1.0000     | 1.0000         | -0.0%       |
