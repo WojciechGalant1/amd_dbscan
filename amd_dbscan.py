@@ -54,6 +54,9 @@ class AMD_DBSCAN:
         self.eps_list_ = None
         self.minpts_list_ = None
         self.adaptive_k_ = None
+        self.best_eps_ = None  # najlepszy Eps z adaptacji parametrów
+        self.best_labels_ = None  # najlepsze etykiety z adaptacji parametrów (dla single-density)
+        self.labels_store_ = None  # przechowuje wszystkie etykiety z adaptacji
         self.candidate_eps_ = None
         self.labels_ = None
         self.vnn_ = None
@@ -203,6 +206,7 @@ class AMD_DBSCAN:
 
         cluster_counts = np.zeros(L, dtype=int)
         labels_store = [None] * L
+        self.labels_store_ = labels_store  # zapisz dla późniejszego użycia w single-density
 
         # iterowanie raz aby zebrać liczby klastrów dla każdej pary (może być kosztowne)
         for i in range(L):
@@ -223,26 +227,47 @@ class AMD_DBSCAN:
 
         if stable_idx is None:
             # zapasowe: wybieranie indeksu z maksymalnym NMI jeśli y_true podane, w przeciwnym razie wybieranie indeksu z medianą klastrów
+            # Jeśli NMI jest takie samo, wybierz ten z niższym noise ratio
             if y_true is not None:
                 best_i = 0
                 best_nmi = -1
+                best_noise_ratio = float('inf')
                 for i in range(L):
                     if labels_store[i] is None:
                         continue
                     try:
                         nmi = normalized_mutual_info_score(y_true, labels_store[i])
+                        noise_ratio = np.sum(labels_store[i] == -1) / len(labels_store[i])
                     except Exception:
                         nmi = -1
-                    if nmi > best_nmi:
+                        noise_ratio = float('inf')
+                    # Preferuj niższy noise ratio gdy NMI jest bardzo podobne (różnica < 0.01)
+                    # Jeśli noise ratio jest również podobne, preferuj większy Eps (mniej noise, lepsza stabilność)
+                    if nmi > best_nmi + 0.01:  # wyraźnie lepsze NMI
                         best_nmi = nmi
+                        best_noise_ratio = noise_ratio
                         best_i = i
+                    elif abs(nmi - best_nmi) <= 0.01:
+                        # podobne NMI: preferuj niższy noise, a jeśli noise jest podobny, preferuj większy Eps (większy indeks)
+                        if noise_ratio < best_noise_ratio - 0.01:  # wyraźnie niższy noise
+                            best_nmi = nmi
+                            best_noise_ratio = noise_ratio
+                            best_i = i
+                        elif abs(noise_ratio - best_noise_ratio) <= 0.01 and i > best_i:  # podobny noise, preferuj większy Eps
+                            best_nmi = nmi
+                            best_noise_ratio = noise_ratio
+                            best_i = i
                 best_index = best_i
             else:
                 best_index = int(L // 2)
             adaptive_k = minpts_list[best_index]
+            best_eps = eps_list[best_index] if best_index < len(eps_list) else eps_list[len(eps_list)//2]
+            best_labels = labels_store[best_index] if labels_store[best_index] is not None else None
             self.adaptive_k_ = int(adaptive_k)
+            self.best_eps_ = float(best_eps)
+            self.best_labels_ = best_labels
             if self.verbose:
-                print(f"[param_adapt] no stable segment found, fallback best_index={best_index}, adaptive_k={adaptive_k}")
+                print(f"[param_adapt] no stable segment found, fallback best_index={best_index}, adaptive_k={adaptive_k}, best_eps={best_eps:.4f}")
             return int(adaptive_k)
 
         # stabilny region, zgodnie z artykułem, niech n = cluster_counts[stable_idx]
@@ -262,26 +287,62 @@ class AMD_DBSCAN:
                 left = mid + 1
 
         # Opcjonalnie doprecyzowanie używając NMI jeśli y_true istnieje: wybieranie największego indeksu w [stable_idx, best_index] który maksymalizuje NMI
+        # Jeśli NMI jest takie samo, wybierz ten z niższym noise ratio
         if y_true is not None:
             best_nmi = -1
             best_index_nmi = best_index
+            best_noise_ratio = float('inf')
             for idx in range(stable_idx, best_index + 1):
                 lbls = labels_store[idx]
                 if lbls is None:
                     continue
                 try:
                     nmi = normalized_mutual_info_score(y_true, lbls)
+                    noise_ratio = np.sum(lbls == -1) / len(lbls)
                 except Exception:
                     nmi = -1
-                if nmi > best_nmi:
+                    noise_ratio = float('inf')
+                # Preferuj niższy noise ratio gdy NMI jest bardzo podobne (różnica < 0.01)
+                # Jeśli noise ratio jest również podobne, preferuj większy Eps (mniej noise, lepsza stabilność)
+                if nmi > best_nmi + 0.01:  # wyraźnie lepsze NMI
                     best_nmi = nmi
+                    best_noise_ratio = noise_ratio
                     best_index_nmi = idx
+                elif abs(nmi - best_nmi) <= 0.01:
+                    # podobne NMI: preferuj niższy noise, a jeśli noise jest podobny, preferuj większy Eps (większy indeks)
+                    if noise_ratio < best_noise_ratio - 0.01:  # wyraźnie niższy noise
+                        best_nmi = nmi
+                        best_noise_ratio = noise_ratio
+                        best_index_nmi = idx
+                    elif abs(noise_ratio - best_noise_ratio) <= 0.01 and idx > best_index_nmi:  # podobny noise, preferuj większy Eps
+                        best_nmi = nmi
+                        best_noise_ratio = noise_ratio
+                        best_index_nmi = idx
             best_index = best_index_nmi
 
         adaptive_k = minpts_list[best_index]
+        best_eps = eps_list[best_index]
+        best_labels = labels_store[best_index]  # zapisz najlepsze etykiety
+        # ograniczenie adaptive_k do rozsądnego zakresu (max 20 dla większości przypadków)
+        # zbyt wysokie k prowadzi do zbyt wielu kandydatów Eps
+        n = X.shape[0]
+        max_reasonable_k = min(20, max(4, int(np.sqrt(n))))
+        if adaptive_k > max_reasonable_k:
+            if self.verbose:
+                print(f"[param_adapt] adaptive_k={adaptive_k} zbyt wysokie, ograniczenie do {max_reasonable_k}")
+            adaptive_k = max_reasonable_k
+            # znajdź odpowiadający eps dla ograniczonego k
+            for i, mp in enumerate(minpts_list):
+                if mp == adaptive_k:
+                    best_eps = eps_list[i]
+                    best_labels = labels_store[i]
+                    break
+        
         self.adaptive_k_ = int(adaptive_k)
+        self.best_eps_ = float(best_eps)
+        self.best_labels_ = best_labels  # zapisz najlepsze etykiety dla single-density
         if self.verbose:
-            print(f"[param_adapt] stable_idx={stable_idx}, best_index={best_index}, adaptive_k={adaptive_k}")
+            print(f"[param_adapt] stable_idx={stable_idx}, best_index={best_index}, adaptive_k={adaptive_k}, best_eps={best_eps:.4f}")
         return int(adaptive_k)
 
     # --------------------------
@@ -312,14 +373,29 @@ class AMD_DBSCAN:
 
         # histogram
         hist_vals, bin_edges = np.histogram(kdist, bins=n_bins)
-        # znalezienie pików przez proste wykrywanie lokalnych maksimów
+        # znalezienie pików przez wykrywanie lokalnych maksimów z minimalnym progiem
+        # używamy średniej jako progu aby filtrować małe piki
+        mean_hist = np.mean(hist_vals)
+        min_peak_height = max(mean_hist * 0.3, 5)  # przynajmniej 30% średniej lub 5
+        
         peaks = []
         for i in range(1, len(hist_vals) - 1):
-            if hist_vals[i] > hist_vals[i - 1] and hist_vals[i] > hist_vals[i + 1]:
+            if (hist_vals[i] > hist_vals[i - 1] and 
+                hist_vals[i] > hist_vals[i + 1] and 
+                hist_vals[i] >= min_peak_height):
                 peaks.append(i)
-        num_peaks = len(peaks)
+        
+        # ograniczenie liczby pików do maksymalnie 6 (dla większości przypadków wystarczy 2-4)
+        if len(peaks) > 6:
+            # wybierz najwyższe piki
+            peak_heights = [(i, hist_vals[i]) for i in peaks]
+            peak_heights.sort(key=lambda x: x[1], reverse=True)
+            peaks = [p[0] for p in peak_heights[:6]]
+            peaks.sort()
+        
+        num_peaks = len(peaks) if len(peaks) > 0 else 1
         if self.eps_peaks is not None:
-            num_peaks = max(1, int(self.eps_peaks))
+            num_peaks = max(1, min(int(self.eps_peaks), 6))  # maksymalnie 6
         if num_peaks == 0:
             num_peaks = 1  # zawsze przynajmniej jeden pik występuje
 
@@ -328,6 +404,23 @@ class AMD_DBSCAN:
         kdist_reshaped = kdist.reshape(-1, 1)
         kmeans.fit(kdist_reshaped)
         centers = sorted([float(c[0]) for c in kmeans.cluster_centers_])
+        
+        # dodatkowe filtrowanie: usuń kandydatów Eps które są zbyt blisko siebie
+        # minimalna odległość między kandydatami to 10% zakresu kdist
+        if len(centers) > 1:
+            kdist_range = np.max(kdist) - np.min(kdist)
+            min_distance = kdist_range * 0.1
+            filtered_centers = [centers[0]]
+            for c in centers[1:]:
+                if c - filtered_centers[-1] >= min_distance:
+                    filtered_centers.append(c)
+            centers = filtered_centers
+        
+        # ostateczne ograniczenie do maksymalnie 3 kandydatów (dla większości przypadków wystarczy 2-3)
+        # Dla multi-density preferuj 2, dla single-density użyj 1
+        if len(centers) > 3:
+            centers = centers[:3]
+        
         self.candidate_eps_ = centers
         if self.verbose:
             print(f"[candidate_eps] adaptive_k={adaptive_k}, num_peaks={num_peaks}, candidate_eps={centers}")
@@ -367,9 +460,14 @@ class AMD_DBSCAN:
             nbrs_rad = NearestNeighbors(radius=eps, metric=metric).fit(X[remaining_idx])
             neigh = nbrs_rad.radius_neighbors(X[remaining_idx], return_distance=False)
             counts = np.array([len(a) for a in neigh], dtype=float)
-            minpts = int(round(np.mean(counts)))
-            if minpts < self.min_pts_floor:
-                minpts = self.min_pts_floor
+            # Użyj percentyla 25 (Q1) zamiast średniej/mediany dla bardziej konserwatywnego minpts
+            # To pomaga uniknąć zbyt niskiego minpts który powoduje nadmierną segmentację
+            q1_count = np.percentile(counts, 25)
+            median_count = np.median(counts)
+            # Użyj maksimum z Q1 i 50% mediany dla bardziej konserwatywnego podejścia
+            minpts = int(round(max(q1_count, median_count * 0.5)))
+            # Zapewnij minimum 3 dla stabilności
+            minpts = max(minpts, max(self.min_pts_floor, 3))
 
             # uruchomienie DBSCAN na pozostałych punktach z eps i minpts
             labels_partial, nclusters = self.run_dbscan(X[remaining_idx], eps, minpts, metric=metric)
@@ -378,14 +476,21 @@ class AMD_DBSCAN:
                 continue
 
             # mapowanie częściowych etykiet na globalne id klastrów
+            # filtrowanie: ignoruj klastry które są zbyt małe (mniej niż minpts punktów)
             unique_partial = sorted([u for u in set(labels_partial) if u != -1])
+            cluster_sizes = {u: np.sum(labels_partial == u) for u in unique_partial}
+            # Zwiększ minimalny rozmiar klastra aby uniknąć nadmiernej segmentacji
+            # Użyj maksimum z minpts, 5% pozostałych punktów, lub 5 punktów
+            min_cluster_size = max(minpts, max(int(len(remaining_idx) * 0.05), 5))
+            
             mapping = {}
             for up in unique_partial:
-                next_cluster_id += 1
-                mapping[up] = next_cluster_id
+                if cluster_sizes[up] >= min_cluster_size:
+                    next_cluster_id += 1
+                    mapping[up] = next_cluster_id
 
             for local_idx, lab in enumerate(labels_partial):
-                if lab != -1:
+                if lab != -1 and lab in mapping:
                     global_idx = remaining_idx[local_idx]
                     final_labels[global_idx] = mapping[lab]
 
@@ -426,14 +531,48 @@ class AMD_DBSCAN:
         # 3
         adaptive_k = self.parameter_adaptation_find_k(X, eps_list=eps_list, minpts_list=minpts_list, y_true=y_true)
 
-        # 4
-        candidate_eps = self.obtain_candidate_eps_list(X, adaptive_k=adaptive_k)
-
-        # 5
-        labels = self.multi_density_clustering(X, candidate_eps=candidate_eps)
-
-        # 6 VNN
+        # 6 VNN (oblicz wcześniej aby określić typ zbioru)
         self.compute_vnn(X, eps1=eps_list[0] if eps_list else None)
+        
+        # 4 - dostosuj liczbę kandydatów Eps na podstawie VNN
+        # Dla single-density (VNN < 10) użyj tylko jednego Eps z adaptacji parametrów
+        # Dla multi-density (VNN >= 10) użyj 2-3 kandydatów Eps
+        if self.vnn_ < 10:
+            # Single-density: użyj najlepszych etykiet z adaptacji parametrów (już obliczonych)
+            # lub użyj tylko jednego Eps z najlepszego indeksu adaptacji
+            if self.best_labels_ is not None:
+                # użyj już obliczonych najlepszych etykiet (bardziej efektywne i dokładne)
+                labels = np.array(self.best_labels_).copy()
+                if self.best_eps_ is not None:
+                    candidate_eps = [self.best_eps_]
+                else:
+                    candidate_eps = [eps_list[len(eps_list)//2]]
+                self.candidate_eps_ = candidate_eps
+                if self.verbose:
+                    print(f"[fit_predict] Single-density detected (VNN={self.vnn_:.2f}), using pre-computed best labels with Eps={candidate_eps[0]:.4f}")
+            else:
+                # fallback: użyj tylko jednego Eps
+                if self.best_eps_ is not None:
+                    candidate_eps = [self.best_eps_]
+                else:
+                    candidate_eps = [eps_list[len(eps_list)//2]]
+                self.candidate_eps_ = candidate_eps
+                if self.verbose:
+                    print(f"[fit_predict] Single-density detected (VNN={self.vnn_:.2f}), using single Eps={candidate_eps[0]:.4f}")
+                # uruchom klasteryzację z jednym Eps
+                labels = self.multi_density_clustering(X, candidate_eps=candidate_eps)
+        else:
+            # Multi-density: użyj 2-3 kandydatów (preferuj 3 dla lepszego pokrycia różnych gęstości)
+            original_eps_peaks = self.eps_peaks
+            if self.eps_peaks is None:
+                # automatycznie ogranicz do maksymalnie 3 dla multi-density (lepsze pokrycie)
+                self.eps_peaks = 3
+            candidate_eps = self.obtain_candidate_eps_list(X, adaptive_k=adaptive_k)
+            self.eps_peaks = original_eps_peaks  # przywróć oryginalną wartość
+            if self.verbose:
+                print(f"[fit_predict] Multi-density detected (VNN={self.vnn_:.2f}), using {len(candidate_eps)} candidate Eps")
+            # uruchom klasteryzację multi-density
+            labels = self.multi_density_clustering(X, candidate_eps=candidate_eps)
 
         if self.verbose:
             print(f"[fit_predict] done in {time.time()-t0:.2f}s, clusters={len(set(labels))-(1 if -1 in labels else 0)}, VNN={self.vnn_:.3f}")
