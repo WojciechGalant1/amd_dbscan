@@ -30,7 +30,7 @@ Repozytorium zawiera:
 ### 1. Klonowanie repozytorium
 
 ```bash
-git clone https://github.com/
+git clone [https://github.com/](https://github.com/WojciechGalant1/amd_dbscan.git)
 cd amd-dbscan
 
 ## Instalacja zależności
